@@ -1,6 +1,10 @@
 from dataclasses import dataclass
 from pathlib import Path
-import tomllib
+
+try:
+    import tomllib
+except ImportError:
+    import tomli as tomllib  # type: ignore[no-redef]
 
 _DEFAULT = Path(__file__).parent.parent / "config.toml"
 
