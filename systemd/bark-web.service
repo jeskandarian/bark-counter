@@ -1,0 +1,15 @@
+[Unit]
+Description=Bark Counter - Web Server
+After=network.target bark-detector.service
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/bark-counter
+ExecStart=/home/pi/bark-counter/venv/bin/python -m src.web
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
