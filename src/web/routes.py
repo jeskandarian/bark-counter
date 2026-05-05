@@ -25,8 +25,10 @@ def api_barks():
     start = request.args.get("start", type=float)
     end   = request.args.get("end",   type=float)
     conn  = _conn()
-    rows  = query_episodes(conn, start=start, end=end)
-    conn.close()
+    try:
+        rows = query_episodes(conn, start=start, end=end)
+    finally:
+        conn.close()
     return jsonify([dict(r) for r in rows])
 
 
@@ -41,8 +43,10 @@ def api_export():
         tz = zoneinfo.ZoneInfo("UTC")
 
     conn = _conn()
-    rows = query_episodes(conn, start=start, end=end)
-    conn.close()
+    try:
+        rows = query_episodes(conn, start=start, end=end)
+    finally:
+        conn.close()
 
     def fmt(ts):
         return datetime.datetime.fromtimestamp(ts, tz=tz).isoformat()
@@ -62,17 +66,16 @@ def api_export():
     return resp
 
 
-@bp.route("/recordings/<path:filename>")
+@bp.route("/recordings/<string:filename>")
 def recordings(filename):
-    try:
-        return send_from_directory(current_app.config["RECORDINGS_DIR"], filename, conditional=True)
-    except Exception:
-        return "", 404
+    return send_from_directory(current_app.config["RECORDINGS_DIR"], filename, conditional=True)
 
 
 @bp.route("/api/stats")
 def api_stats():
     conn  = _conn()
-    stats = query_stats(conn)
-    conn.close()
+    try:
+        stats = query_stats(conn)
+    finally:
+        conn.close()
     return jsonify(stats)
