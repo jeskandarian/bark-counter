@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bark Counter</title>
+<script src="/static/chart.min.js"></script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#111;color:#eee;font-family:monospace;padding:16px}
+  h1{font-size:1.3rem;letter-spacing:2px;color:#f90;margin-bottom:8px}
+  .stats{display:flex;gap:20px;margin-bottom:12px;font-size:.85rem;color:#aaa}
+  .stats strong{color:#fff;font-size:1rem}
+  .zoom-strip{display:flex;gap:6px;margin-bottom:12px}
+  .zoom-strip button{background:#222;color:#aaa;border:1px solid #444;
+    padding:5px 12px;cursor:pointer;font-family:monospace;border-radius:3px}
+  .zoom-strip button.active{background:#f90;color:#111;border-color:#f90}
+  #chartBox{position:relative;height:280px;margin-bottom:20px}
+  table{width:100%;border-collapse:collapse;font-size:.8rem}
+  th{text-align:left;color:#777;border-bottom:1px solid #333;padding:5px 8px}
+  td{padding:5px 8px;border-bottom:1px solid #1e1e1e}
+  tr:hover{background:#1a1a1a}
+  audio{height:22px;vertical-align:middle}
+</style>
+</head>
+<body>
+<h1>BARK COUNTER</h1>
+<div class="stats">
+  <span>Today: <strong id="sToday">—</strong></span>
+  <span>Last Hour: <strong id="sHour">—</strong></span>
+  <span>Peak: <strong id="sPeak">—</strong></span>
+</div>
+<div class="zoom-strip">
+  <button onclick="zoom(1)"   id="z1">1h</button>
+  <button onclick="zoom(6)"   id="z6">6h</button>
+  <button onclick="zoom(24)"  id="z24" class="active">24h</button>
+  <button onclick="zoom(168)" id="z168">7d</button>
+  <button onclick="zoom(720)" id="z720">30d</button>
+</div>
+<div id="chartBox"><canvas id="chart"></canvas></div>
+<table>
+  <thead><tr><th>Time</th><th>Duration</th><th>Barks</th><th>Peak dB</th><th>Audio</th></tr></thead>
+  <tbody id="rows"></tbody>
+</table>
+<script>
+const ZOOM_IDS={1:'z1',6:'z6',24:'z24',168:'z168',720:'z720'};
+let hours=24, chart=null;
+
+function zoom(h){
+  hours=h;
+  Object.entries(ZOOM_IDS).forEach(([k,id])=>
+    document.getElementById(id).classList.toggle('active',+k===h));
+  load();
+}
+
+async function loadStats(){
+  const s=await fetch('/api/stats').then(r=>r.json());
+  document.getElementById('sToday').textContent=
+    `${s.today.episodes}ep / ${s.today.barks}bark`;
+  document.getElementById('sHour').textContent=
+    `${s.last_hour.episodes}ep / ${s.last_hour.barks}bark`;
+  document.getElementById('sPeak').textContent=
+    s.today.peak_db!=null ? s.today.peak_db.toFixed(1)+' dBFS' : '—';
+}
+
+async function load(){
+  const now=Date.now()/1000;
+  const eps=await fetch(`/api/barks?start=${now-hours*3600}&end=${now}`).then(r=>r.json());
+  renderChart(eps);
+  renderTable(eps);
+}
+
+function renderChart(eps){
+  const now=Date.now()/1000;
+  const n=Math.min(hours,48);
+  const bsz=hours*3600/n;
+  const barks=new Array(n).fill(0), epcnt=new Array(n).fill(0);
+  const base=now-hours*3600;
+  eps.forEach(e=>{
+    const i=Math.max(0,Math.min(n-1,Math.floor((e.started_at-base)/bsz)));
+    barks[i]+=e.bark_count; epcnt[i]+=1;
+  });
+  const labels=Array.from({length:n},(_,i)=>{
+    const d=new Date((base+i*bsz)*1000);
+    return d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  });
+  if(chart)chart.destroy();
+  chart=new Chart(document.getElementById('chart').getContext('2d'),{
+    type:'bar',
+    data:{labels,datasets:[
+      {type:'bar',label:'Barks',data:barks,backgroundColor:'rgba(255,153,0,.5)',
+       borderColor:'#f90',borderWidth:1,yAxisID:'y'},
+      {type:'line',label:'Episodes',data:epcnt,borderColor:'#4af',
+       backgroundColor:'transparent',pointRadius:2,tension:.3,yAxisID:'y1'},
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,
+      interaction:{mode:'index',intersect:false},
+      plugins:{legend:{labels:{color:'#aaa',font:{family:'monospace'}}}},
+      scales:{
+        x:{ticks:{color:'#555',maxTicksLimit:12},grid:{color:'#1e1e1e'}},
+        y:{position:'left',ticks:{color:'#f90'},grid:{color:'#1e1e1e'},
+           title:{display:true,text:'Barks',color:'#f90'}},
+        y1:{position:'right',ticks:{color:'#4af'},grid:{drawOnChartArea:false},
+            title:{display:true,text:'Episodes',color:'#4af'}},
+      }},
+  });
+}
+
+function renderTable(eps){
+  document.getElementById('rows').innerHTML=[...eps].reverse().map(e=>`
+    <tr>
+      <td>${new Date(e.started_at*1000).toLocaleString()}</td>
+      <td>${(e.duration_ms/1000).toFixed(1)}s</td>
+      <td>${e.bark_count}</td>
+      <td>${e.peak_db.toFixed(1)}</td>
+      <td>${e.wav_file?`<audio controls src="/recordings/${e.wav_file}"></audio>`:'—'}</td>
+    </tr>`).join('');
+}
+
+loadStats(); load();
+setInterval(loadStats,30000); setInterval(load,30000);
+</script>
+</body>
+</html>
